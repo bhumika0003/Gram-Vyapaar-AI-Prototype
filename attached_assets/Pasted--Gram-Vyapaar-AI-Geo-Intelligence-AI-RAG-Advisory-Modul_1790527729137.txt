@@ -1,0 +1,109 @@
+# Gram Vyapaar AI — Geo-Intelligence + AI/RAG Advisory Module (Member C)
+
+Standalone backend module for SIH26091: competitor mapping, market intelligence,
+5-dimensional risk engine, strategic pivot engine, conversational AI advisor,
+grounded RAG, and a rule-based fallback engine.
+
+## ⚠️ Read this before you trust anything below
+
+This was scaffolded and written in a sandbox **with no network access and no
+Postgres instance**, so:
+
+- **I have not run `npm install`, `tsc`, or `jest` against this code.** It's
+  written carefully and the logic is straightforward, but "I built it" here
+  means "I wrote working-shaped TypeScript," not "I confirmed it compiles and
+  every test passes." Run `npm install && npm run build && npm test` yourself
+  before you trust it — do this before you tell your teammates it's done.
+- **No live CGWB / discom / TRAI / regulatory data source is wired in.** The
+  5-dimension risk engine is honest about this: every dimension returns
+  `DATA_UNAVAILABLE — manual verification required` unless you wire in a real
+  source (see comments in `risk.controller.ts`). Don't demo this as "real risk
+  data" — it isn't yet, by design, because I'm not going to fabricate a
+  plausible-looking number for a data source that doesn't exist.
+- **Population/market-reach figures are a coarse density heuristic**
+  (400 people/km², a rural-India order-of-magnitude guess), not census data.
+  Labeled `DATA_ESTIMATE` with a note. Swap in WorldPop/Census tiles for
+  anything you'd actually present to a judge as real.
+- **Embeddings dimension is hardcoded to 1536** in the migration (OpenAI
+  `text-embedding-3-small`). If you use Gemini's `text-embedding-004`
+  (768-dim) instead, you must `ALTER TABLE embeddings ALTER COLUMN vector TYPE
+  vector(768)` or the inserts will fail — I didn't make this auto-detect
+  because silently changing a vector column's dimension based on env config is
+  exactly the kind of "quietly works until it doesn't" bug you don't want two
+  weeks before a demo.
+- The `pg` query for the auth stub, Overpass HTTP call, and pgvector
+  `<=>` operator syntax are all standard/well-documented, but again — unverified
+  by actual execution here.
+
+If you want me to actually run and fix this against a real `npm install`, do
+that in an environment with network access and paste me the error output.
+
+## What's actually implemented
+
+| Feature | Status |
+|---|---|
+| 1. Competitor mapping (Overpass) | Real HTTP call to Overpass, haversine distance, saturation banding with documented thresholds, graceful 503 (never a fake count) if Overpass is down |
+| 2. Market intelligence | Real Overpass-derived competitor count feeds void/opportunity analysis; population is a heuristic; price range and several threat fields honestly return `DATA_UNAVAILABLE` — no live pricing/mandi feed exists |
+| 3. 5-D risk engine | Structurally complete; every dimension explicitly `DATA_UNAVAILABLE` until you wire in a real source (see file comments for which API to look for) |
+| 4. Strategic pivot engine | Fully rule-based, generates all 4 alternative types when `feasibilityScore < 70` |
+| 5. Conversational AI advisor | Provider-abstracted chat, uses `contextSnapshot`, never recomputes financial numbers, routes policy questions through RAG |
+| 6. Grounded RAG | Chunking + embedding + pgvector cosine search implemented; returns `[]` retrieval (triggering the exact "no verified information" reply) if no DB/provider is configured |
+| 7. Fallback engine | Rule-based templates for competition/EMI/scenario/loan-verification questions in EN + HI, `usedFallback: true` always set |
+| AI provider abstraction | Gemini + OpenAI both implemented behind one `AIProvider` interface, selected by `AI_PROVIDER` env var |
+| Demo mode | "Sunita" dairy demo renders competitors/market/risk with zero external calls when `applicationId === DEMO_APPLICATION_ID` |
+
+## Setup
+
+```bash
+cd backend
+cp .env.example .env        # fill in DATABASE_URL + AI_PROVIDER if you have them
+npm install
+npm run build
+npm run migrate              # prints the psql command — actually run it against your DB
+npm run dev                  # or: npm start after build
+```
+
+Without `DATABASE_URL` or an `AI_PROVIDER` key set, every endpoint still
+responds — RAG retrieval returns empty (triggering the honest "no verified
+information" path), and chat/feasibility-summary fall back to the rule-based
+templates with `usedFallback: true`. This is intentional so the module never
+hard-depends on external services to demo.
+
+## Endpoints
+
+See `src/modules/geo-intelligence/routes.ts` and
+`src/modules/ai-advisory/routes.ts` — paths match the shared API contract
+exactly:
+
+```
+POST /api/geo/competitors
+POST /api/market/analyze
+POST /api/risk/assess
+POST /api/pivot/suggest
+POST /api/ai/chat
+POST /api/ai/feasibility-summary
+POST /api/rag/ingest        (internal — no user auth, needs an internal-service secret in production)
+GET  /api/geo/results/:applicationId
+```
+
+All protected routes use the shared `requireAuth` stub — send `x-user-id`
+(and optionally `x-user-role`) headers until the platform module's real JWT
+auth replaces it.
+
+## Testing
+
+```bash
+npm test
+```
+
+Covers: mocked-Overpass competitor mapping (success + outage-without-crash),
+demo-mode zero-external-call rendering, the fallback engine actually kicking
+in when `AI_PROVIDER=none`, and the RAG "no verified information" message
+firing verbatim rather than a hallucinated answer. I did not execute this
+suite myself — see the caveat at the top of this file.
+
+## What I did not build (by spec, not by accident)
+
+Frontend UI, financial formulas/scheme tables, authentication internals, DPR
+PDF rendering, business monitoring, duplicate detection — all explicitly out
+of scope for Member C.
