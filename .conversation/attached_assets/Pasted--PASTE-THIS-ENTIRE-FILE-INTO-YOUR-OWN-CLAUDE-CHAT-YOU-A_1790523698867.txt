@@ -1,0 +1,151 @@
+# PASTE THIS ENTIRE FILE INTO YOUR OWN CLAUDE CHAT — YOU ARE MEMBER A (FRONTEND & UX)
+
+## ROLE
+
+Act as a senior frontend architect and UX designer building a polished, production-feeling web app for a Smart India Hackathon prototype.
+
+## CONTEXT
+
+We are a 4-person team building **Rural Business AI Advisor** ("Gram Vyapaar AI") for SIH26091 — a software-only platform that helps rural micro-entrepreneurs get hyper-local feasibility analysis, deterministic financial structuring, AI explanation, and scenario simulation. Three teammates are building the backend (financial engine, geospatial/AI, and platform/auth/reports) **in separate Claude sessions, right now, in parallel**. We will merge all four pieces into one repo later.
+
+**Your job is ONLY the frontend.** Everything you build must talk to the backend *exclusively* through the API contract below — never assume internal backend logic. Build against **mock data matching this contract exactly** so the app is fully clickable and demo-able today, then it will be a one-line change (`VITE_USE_MOCKS=false`) to point it at the real backend once it's merged in.
+
+Do not build: financial math, AI/LLM logic, database, authentication logic, or geospatial computation — you only call the APIs and render the results.
+
+---
+
+## 🔗 SHARED CONTRACT (identical for all 4 team members — do not deviate)
+
+**Response envelope — every endpoint returns:**
+```json
+{ "success": true, "data": { }, "error": null, "meta": { "demoMode": false, "generatedAt": "ISO-8601" } }
+```
+Error shape: `{ "success": false, "data": null, "error": { "code": "STRING", "message": "..." }, "meta": {} }`
+
+**Data-confidence wrapper — every analytical (non-raw-input) field arrives wrapped like this. Render it as a small badge/tooltip wherever it appears:**
+```ts
+type Confidence = "VERIFIED" | "DATA_ESTIMATE" | "USER_INPUT" | "MODEL_ASSUMPTION" | "DEMO_SYNTHETIC";
+interface ConfidenceValue<T> { value: T; confidence: Confidence; source: string; asOf?: string; note?: string; }
+```
+Badge style guide: VERIFIED = green, DATA_ESTIMATE = blue, USER_INPUT = gray, MODEL_ASSUMPTION = amber, DEMO_SYNTHETIC = purple with a "Demo Data" label. Never show a number without its badge if it came wrapped this way.
+
+**Explainability block — render as an expandable "Why?" under major results:**
+```ts
+interface Explanation { result: string; why: string; dataSource: string; limitation: string; }
+```
+
+**Core entity:** every business idea a user runs is an `applicationId` (UUID). Your wizard creates it once (via `POST /api/applications`), then every subsequent screen sends that same `applicationId` to the relevant module.
+
+**Roles:** `"ENTREPRENEUR" | "CHANNEL_PARTNER" | "ADMIN"` · **Languages:** `"en" | "hi"` (build the i18n system so more can be added later)
+
+**Auth (dev mode):** the backend accepts `x-user-id` / `x-user-role` headers as a stand-in for real JWT cookies during independent development. Build your API client to send these from whatever local session state you keep (and to also send/receive real httpOnly cookies once the real backend is merged in — same client code either way, just add `credentials: 'include'` to fetch calls).
+
+---
+
+## API CONTRACT YOU WILL CALL (build mock fixtures matching these exactly)
+
+| Method & Path | Owner | Purpose |
+|---|---|---|
+| `POST /api/auth/register`, `/login`, `/refresh`, `/logout`, `GET /api/auth/me` | D | Auth |
+| `POST /api/applications` | D | Create a business application → returns `applicationId` |
+| `GET /api/applications/:id`, `GET /api/applications` | D | Read application(s) |
+| `POST /api/financial/structure` | B | `{applicationId, marginCapital}` → project cost, loan amount, scheme, subvention |
+| `POST /api/financial/amortization` | B | Full EMI schedule |
+| `POST /api/financial/pricing` | B | Cost-plus price + sensitivity table |
+| `POST /api/financial/scenarios` | B | Conservative / Expected / Optimistic comparison |
+| `POST /api/financial/what-if` | B | Recalculation after changing an assumption (drive with sliders) |
+| `POST /api/financial/stress-test` | B | Base / Stress / Recovery cash-flow cases |
+| `POST /api/financial/break-even` | B | Break-even units/revenue/timeline |
+| `POST /api/financial/working-capital` | B | Working capital gap |
+| `GET /api/financial/results/:applicationId` | B | Everything above, pre-aggregated — use this for the dashboard |
+| `POST /api/geo/competitors` | C | `{lat,lng,radiusKm,category}` → competitor list + map markers + saturation |
+| `POST /api/market/analyze` | C | Market reach, opportunities, SWOT, threats, price range, void analysis |
+| `POST /api/risk/assess` | C | 5-dimension risk breakdown |
+| `POST /api/pivot/suggest` | C | Strategic pivot alternatives |
+| `POST /api/ai/chat` | C | `{applicationId, message, language, contextSnapshot}` → AI advisor reply |
+| `POST /api/ai/feasibility-summary` | C | Full structured summary object (see shape below) |
+| `GET /api/geo/results/:applicationId` | C | Everything above, pre-aggregated |
+| `GET /api/partners/nearby?lat=&lng=` | D | Nearby SCA/PSB/RRB list |
+| `POST /api/reports/generate`, `GET /api/reports/:id` | D | DPR PDF |
+| `POST /api/business-monitoring/metrics`, `GET /api/business-monitoring/dashboard/:applicationId` | D | Monthly actuals + projected-vs-actual + alerts |
+| `GET /api/action-plan/:applicationId` | D | Before-starting / before-loan / first-30-days / first-90-days checklists |
+| `GET/POST/PUT /api/admin/schemes`, `POST /api/admin/documents`, `GET /api/admin/duplicates`, `GET /api/admin/analytics` | D | Admin screens |
+
+`feasibility-summary` shape (from master spec, use for the Feasibility Report page):
+```json
+{
+  "summary": "string", "marketReach": {}, "opportunities": [], "competitors": {},
+  "pricing": {}, "swot": {}, "threats": [], "financialInsights": {}, "scenarios": {},
+  "recommendations": [], "assumptions": [], "sources": [], "confidence": {}
+}
+```
+
+**Build a mock layer now:** either MSW (Mock Service Worker) or a simple `fetch` wrapper reading local JSON fixtures, toggled by `VITE_USE_MOCKS`. Every fixture must match the shapes above (including the `ConfidenceValue`/`Explanation` wrapping) so swapping to the real backend later needs zero component changes.
+
+---
+
+## TECH STACK
+
+React 18+, TypeScript, Vite, Tailwind CSS, Recharts (charts), React-Leaflet + OpenStreetMap tiles (maps), i18next (translations), React Query (server state) + Zustand (wizard/local state), Framer Motion (subtle transitions only — this is a trust-first product, not a flashy AI demo).
+
+## DESIGN LANGUAGE
+
+The product must read as **trustworthy, government-backed, and rural-user-friendly** — not a generic AI chatbot skin and not a generic SaaS dashboard.
+- Clean cards, clear charts, readable typography, strong hierarchy on financial numbers, accessible color contrast, fully responsive (assume many users are on mid-range Android phones with patchy connectivity — keep bundle light, show skeleton loaders, and design gracefully for slow/failed network calls).
+- Homepage's primary CTA is **"Analyze My Business"** — never lead with "Ask AI anything." The AI chat is a secondary panel that sits *on top of* the structured analysis, never the entry point (this is the master spec's explicit anti-chatbot requirement).
+
+## PAGES TO BUILD (all 25, from the product spec)
+
+1. Landing Page (hero + "Analyze My Business" CTA + "Try Demo" button)
+2. Login · 3. Register · 4. Language Selection
+5. Entrepreneur Dashboard (business snapshot, market summary, financial summary, risk summary, scenario summary, action items, report links — pull each card from its respective `/results` endpoint)
+6. Business Intake Wizard (multi-step: location → capital → category → resources/skills → review) — this step calls `POST /api/applications` at the end and stores the returned `applicationId` in your app state for every later screen
+7. Location / Map Selection (React-Leaflet picker)
+8. Financial Calculator (live recompute as inputs change)
+9. Scheme Details (source, effective date, version, assumptions clearly shown — never imply guaranteed approval)
+10. Competitor Map (markers, density, saturation indicator, "may be incomplete" warning always visible)
+11. Market Intelligence (reach, opportunities, SWOT, threats with severity/impact/mitigation)
+12. Risk Analysis (5 dimensions, "Data unavailable — manual verification required" state must render cleanly)
+13. Scenario Simulator (Conservative/Expected/Optimistic side-by-side charts)
+14. What-If Simulator (sliders for demand/price/cost/capital → live recalculation charts)
+15. AI Advisor Chat (grounded chat panel, shows sources/citations, shows "I don't have verified information for this claim" gracefully when returned)
+16. Feasibility Report (renders the `feasibility-summary` shape, section by section, with confidence badges throughout)
+17. DPR Preview (preview of the generated PDF + download button)
+18. Business Monitoring (monthly entry form + projected-vs-actual charts + alerts list)
+19. Alerts (dedicated list view of early-warning alerts with reason/evidence/suggested actions)
+20. Channel Partner Dashboard (assigned applications, status update)
+21. Admin Dashboard · 22. Scheme Management · 23. Document/RAG Management · 24. Duplicate Review · 25. Data Source/Assumptions view
+
+## MAIN FLOW TO WIRE END-TO-END
+
+```
+Landing → Login/Register → Language → Profile → Intake Wizard (creates applicationId)
+→ Location → Capital → Category → Resources/Skills → Financial Structuring → Scheme
+→ Competitor Map → Market Analysis → Risk Engine → Scenario Simulator → What-If
+→ AI Advisory → Feasibility Report → DPR PDF → Action Plan → (optional) Business Monitoring
+```
+
+## MULTILINGUAL & VOICE (software-only, no hardware)
+
+- i18next with `en.json` / `hi.json` translation files for every UI string; architect it so adding `mr.json` later is a config change, not a refactor.
+- Voice input: microphone button using the browser's Web Speech API (speech-to-text) that populates the intake wizard fields (e.g., user says "Mere paas ek lakh rupaye hain, mere gaon mein dairy kholna hai" → fields auto-fill). Optional text-to-speech for reading back AI responses. No native/hardware audio dependency.
+
+## "TRY DEMO" REQUIREMENT
+
+One click on the landing page must load a fully populated demo journey (entrepreneur **Sunita**, ₹1,00,000, dairy business, demo village) using your mock fixtures — a judge should see the complete product with zero login and zero API keys.
+
+## WHAT NOT TO BUILD
+
+Financial formulas, scheme rate tables, AI/RAG logic, JWT verification internals, database schema, PDF rendering internals, duplicate-matching algorithms. If a screen needs one of these, call the relevant mocked endpoint — don't reimplement the logic client-side.
+
+## DELIVERABLES
+
+1. `/frontend` app, runnable with `npm install && npm run dev`
+2. Mock fixture set covering every endpoint in the table above, matching the response envelope + confidence/explanation wrapping exactly
+3. All 25 pages wired into the main flow, fully navigable end-to-end using mocks
+4. i18n with English + Hindi complete for all static UI strings
+5. Voice input working on the intake wizard
+6. "Try Demo" working with zero backend calls
+7. A short `README.md` in `/frontend` noting exactly which env var flips mocks off and what `VITE_API_BASE_URL` should point to at merge time
+
+**Now actually build it** — don't stop at an architecture doc. Scaffold the app, build the pages, wire the mock API layer, and get the full demo flow clickable end-to-end.

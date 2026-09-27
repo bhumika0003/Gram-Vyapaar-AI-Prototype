@@ -1,0 +1,28 @@
+kind = "web"
+previewPath = "/"
+title = "Gram Vyapaar AI"
+description = "A trustworthy rural business advisor that helps micro-entrepreneurs explore market feasibility, financing, risk, and next steps through a guided demo journey."
+version = "1.0.0"
+id = "artifacts/gram-vyapaar-ai"
+router = "path"
+
+[[services]]
+name = "web"
+paths = [ "/" ]
+localPort = 21096
+
+[services.development]
+run = "pnpm --filter @workspace/gram-vyapaar-ai run dev"
+
+[services.production]
+build = [ "pnpm", "--filter", "@workspace/gram-vyapaar-ai", "run", "build" ]
+serve = "static"
+publicDir = "artifacts/gram-vyapaar-ai/dist/public"
+
+[[services.production.rewrites]]
+from = "/*"
+to = "/index.html"
+
+[services.env]
+PORT = "21096"
+BASE_PATH = "/"
